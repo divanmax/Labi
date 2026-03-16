@@ -1,99 +1,95 @@
 package com.example.aviationservice.service;
 
+import com.example.aviationservice.entity.BookingEntity;
+import com.example.aviationservice.entity.FlightEntity;
 import com.example.aviationservice.model.Booking;
 import com.example.aviationservice.model.Flight;
+import com.example.aviationservice.repository.BookingRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.StreamSupport;
 
 @Service
 public class BookingService {
 
-    private final Map<Long, Booking> storage = new ConcurrentHashMap<>();
-    private final AtomicLong nextId = new AtomicLong(1L);
-
+    private final BookingRepository repository;
     private final PassengerService passengerService;
     private final FlightService flightService;
     private final AircraftService aircraftService;
 
-    public BookingService(PassengerService passengerService, FlightService flightService, AircraftService aircraftService) {
+    public BookingService(BookingRepository repository, PassengerService passengerService,
+                          FlightService flightService, AircraftService aircraftService) {
+        this.repository = repository;
         this.passengerService = passengerService;
         this.flightService = flightService;
         this.aircraftService = aircraftService;
     }
 
+    @Transactional
     public Booking create(Booking booking) {
-        if (booking.getPassengerId() == null || !passengerService.exists(booking.getPassengerId())) {
-            throw new IllegalArgumentException("Passenger with id " + booking.getPassengerId() + " not found");
-        }
-        if (booking.getFlightId() == null || !flightService.exists(booking.getFlightId())) {
-            throw new IllegalArgumentException("Flight with id " + booking.getFlightId() + " not found");
-        }
-        Flight flight = flightService.getById(booking.getFlightId()).orElseThrow();
-        if (!allowsNewBooking(flight.getStatus())) {
-            throw new IllegalArgumentException("Flight status " + flight.getStatus() + " does not allow new bookings");
-        }
-        int capacity = flight.getAircraftId() != null ? aircraftService.getById(flight.getAircraftId()).map(a -> a.getCapacity()).orElse(0) : 0;
-        long bookedCount = storage.values().stream().filter(b -> booking.getFlightId().equals(b.getFlightId())).count();
-        if (bookedCount >= capacity) {
+        if (booking == null) throw new IllegalArgumentException("Request body is required");
+        if (booking.getPassengerId() == null || !passengerService.exists(booking.getPassengerId()))
+            throw new IllegalArgumentException("Passenger not found");
+        if (booking.getFlightId() == null || !flightService.exists(booking.getFlightId()))
+            throw new IllegalArgumentException("Flight not found");
+        FlightEntity flight = flightService.getEntityById(booking.getFlightId());
+        if (flight == null) throw new IllegalArgumentException("Flight not found");
+        if (!allowsNewBooking(flight.getStatus()))
+            throw new IllegalArgumentException("Flight status does not allow new bookings");
+        int capacity = flight.getAircraft() != null ? aircraftService.getEntityById(flight.getAircraft().getId()).getCapacity() : 0;
+        long bookedCount = repository.countByFlight_Id(booking.getFlightId());
+        if (bookedCount >= capacity)
             throw new IllegalArgumentException("Flight has no available seats (capacity " + capacity + ")");
-        }
         if (booking.getSeatNumber() != null && !booking.getSeatNumber().isBlank()) {
-            boolean seatTaken = storage.values().stream()
-                    .anyMatch(b -> booking.getFlightId().equals(b.getFlightId()) && booking.getSeatNumber().equals(b.getSeatNumber()));
-            if (seatTaken) {
-                throw new IllegalArgumentException("Seat " + booking.getSeatNumber() + " is already taken on this flight");
-            }
+            if (repository.existsByFlight_IdAndSeatNumber(booking.getFlightId(), booking.getSeatNumber()))
+                throw new IllegalArgumentException("Seat " + booking.getSeatNumber() + " is already taken");
         }
-        Booking entity = new Booking(null, booking.getPassengerId(), booking.getFlightId(), booking.getSeatNumber());
-        entity.setId(nextId.getAndIncrement());
-        storage.put(entity.getId(), entity);
-        return entity;
+        BookingEntity e = new BookingEntity();
+        e.setPassenger(passengerService.getEntityById(booking.getPassengerId()));
+        e.setFlight(flight);
+        e.setSeatNumber(booking.getSeatNumber());
+        e = repository.save(e);
+        return toModel(e);
     }
 
     public Optional<Booking> getById(Long id) {
-        return Optional.ofNullable(storage.get(id));
+        return repository.findById(id).map(BookingService::toModel);
     }
 
     public List<Booking> getAll() {
-        return List.copyOf(storage.values());
+        return StreamSupport.stream(repository.findAll().spliterator(), false).map(BookingService::toModel).toList();
     }
 
     public List<Booking> getByFlightId(Long flightId) {
-        return storage.values().stream().filter(b -> flightId.equals(b.getFlightId())).toList();
+        return repository.findByFlight_Id(flightId).stream().map(BookingService::toModel).toList();
     }
 
     public List<Booking> getByPassengerId(Long passengerId) {
-        return storage.values().stream().filter(b -> passengerId.equals(b.getPassengerId())).toList();
+        return repository.findByPassenger_Id(passengerId).stream().map(BookingService::toModel).toList();
     }
 
+    @Transactional
     public Optional<Booking> update(Long id, Booking booking) {
-        Booking existing = storage.get(id);
-        if (existing == null) return Optional.empty();
-        if (booking.getPassengerId() != null && !passengerService.exists(booking.getPassengerId())) {
-            throw new IllegalArgumentException("Passenger with id " + booking.getPassengerId() + " not found");
-        }
-        if (booking.getFlightId() != null && !flightService.exists(booking.getFlightId())) {
-            throw new IllegalArgumentException("Flight with id " + booking.getFlightId() + " not found");
-        }
-        existing.setPassengerId(booking.getPassengerId());
-        existing.setFlightId(booking.getFlightId());
-        existing.setSeatNumber(booking.getSeatNumber());
-        return Optional.of(existing);
+        if (booking == null) throw new IllegalArgumentException("Request body is required");
+        return repository.findById(id).map(e -> {
+            if (booking.getPassengerId() != null) e.setPassenger(passengerService.getEntityById(booking.getPassengerId()));
+            if (booking.getFlightId() != null) e.setFlight(flightService.getEntityById(booking.getFlightId()));
+            e.setSeatNumber(booking.getSeatNumber());
+            return BookingService.toModel(repository.save(e));
+        });
     }
 
+    @Transactional
     public boolean delete(Long id) {
-        Booking booking = storage.get(id);
-        if (booking == null) return false;
-        Optional<Flight> flightOpt = flightService.getById(booking.getFlightId());
-        if (flightOpt.isPresent() && !allowsRefund(flightOpt.get().getStatus())) {
-            throw new IllegalArgumentException("Flight status " + flightOpt.get().getStatus() + " does not allow refund/cancellation");
-        }
-        return storage.remove(id) != null;
+        BookingEntity b = repository.findById(id).orElse(null);
+        if (b == null) return false;
+        if (!allowsRefund(b.getFlight().getStatus()))
+            throw new IllegalArgumentException("Flight status does not allow refund/cancellation");
+        repository.deleteById(id);
+        return true;
     }
 
     private static boolean allowsNewBooking(String status) {
@@ -102,5 +98,14 @@ public class BookingService {
 
     private static boolean allowsRefund(String status) {
         return Flight.STATUS_SCHEDULED.equals(status) || Flight.STATUS_BOARDING.equals(status);
+    }
+
+    private static Booking toModel(BookingEntity e) {
+        Booking m = new Booking();
+        m.setId(e.getId());
+        m.setPassengerId(e.getPassenger() != null ? e.getPassenger().getId() : null);
+        m.setFlightId(e.getFlight() != null ? e.getFlight().getId() : null);
+        m.setSeatNumber(e.getSeatNumber());
+        return m;
     }
 }

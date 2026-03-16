@@ -37,3 +37,8 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Env (do not commit secrets) ###
+.env
+.env.local
+*.env.local
