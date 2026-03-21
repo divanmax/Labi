@@ -17,7 +17,6 @@ import java.time.Instant;
 
 @Service
 public class TokenPairService {
-
     private final AuthenticationManager authenticationManager;
     private final AppUserRepository userRepository;
     private final UserSessionRepository userSessionRepository;
