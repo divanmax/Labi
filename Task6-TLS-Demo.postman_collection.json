@@ -1,0 +1,124 @@
+{
+  "info": {
+    "_postman_id": "8b224f21-3f7d-4f6c-a130-task6-tls-demo",
+    "name": "Aviation Service - Task 6 TLS Demo",
+    "description": "Мини-коллекция для демонстрации задания 6: сервис работает по HTTPS (TLS), запросы к API выполняются через https://localhost:8443. Перед POST/PUT/DELETE сначала выполни Get CSRF token.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://localhost:8443" },
+    { "key": "adminUsername", "value": "admin" },
+    { "key": "adminPassword", "value": "admin" },
+    { "key": "csrfToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1 TLS smoke check (public endpoint)",
+      "item": [
+        {
+          "name": "Get CSRF token (HTTPS)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.csrfToken) pm.collectionVariables.set('csrfToken', json.csrfToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/csrf",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "csrf"
+              ]
+            },
+            "description": "Ожидается 200. Если сертификат не доверен, Postman/браузер покажут SSL warning."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2 Protected GET over HTTPS",
+      "item": [
+        {
+          "name": "Get airports (Basic Auth)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{adminUsername}}", "type": "string" },
+                { "key": "password", "value": "{{adminPassword}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/airports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "airports"
+              ]
+            },
+            "description": "Ожидается 200. Демонстрирует доступ к защищенному API по HTTPS."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3 Protected POST over HTTPS (CSRF + Basic)",
+      "item": [
+        {
+          "name": "Create aircraft",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{adminUsername}}", "type": "string" },
+                { "key": "password", "value": "{{adminPassword}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "X-XSRF-TOKEN", "value": "{{csrfToken}}" },
+              { "key": "Cookie", "value": "XSRF-TOKEN={{csrfToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"TLS Demo Aircraft\",\n  \"registrationCode\": \"RA-TLS22017\",\n  \"capacity\": 120\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/aircraft",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "aircraft"
+              ]
+            },
+            "description": "Ожидается 201 (или 400/409 при конфликте данных). Демонстрирует CSRF + Basic Auth + HTTPS."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

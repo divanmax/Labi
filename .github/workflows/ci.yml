@@ -22,11 +22,13 @@ jobs:
           cache: maven
 
       - name: Restore TLS keystore (from secrets)
-        if: ${{ secrets.TLS_KEYSTORE_B64 != '' }}
+        env:
+          TLS_KEYSTORE_B64: ${{ secrets.TLS_KEYSTORE_B64 }}
+        if: ${{ env.TLS_KEYSTORE_B64 != '' }}
         shell: bash
         run: |
           mkdir -p .ci
-          echo "${{ secrets.TLS_KEYSTORE_B64 }}" | base64 -d > .ci/server.p12
+          echo "$TLS_KEYSTORE_B64" | base64 -d > .ci/server.p12
 
       - name: Compile
         run: mvn -B -q compile
