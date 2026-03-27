@@ -1,0 +1,305 @@
+{
+  "info": {
+    "_postman_id": "b7e2a1c0-task4-spring-security-aviation",
+    "name": "Aviation Service — Задание 4 (Spring Security)",
+    "description": "Коллекция для демонстрации задания 4: Basic Auth, CSRF (CookieCsrfTokenRepository), регистрация `/auth/register` с проверкой пароля (≥8 символов + спецсимвол), роли USER/ADMIN.\n\n**Переменные коллекции:** `baseUrl`, `adminUsername` / `adminPassword` (совпадают с `APP_ADMIN_USERNAME` / `APP_ADMIN_PASSWORD`, если админ создаётся при пустой БД), `userUsername` / `userPassword` — для зарегистрированного USER.\n\n**Порядок:** 1) при необходимости «Регистрация»; 2) «Get CSRF token» (сохраняет `csrfToken` в переменные); 3) запросы с Basic + для POST/PUT/DELETE — заголовки `X-XSRF-TOKEN` и `Cookie: XSRF-TOKEN={{csrfToken}}`.\n\n**Ожидаемые коды** указаны в описаниях запросов.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "adminUsername", "value": "admin" },
+    { "key": "adminPassword", "value": "" },
+    { "key": "userUsername", "value": "demo_user" },
+    { "key": "userPassword", "value": "Demo!1234" },
+    { "key": "csrfToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1 Регистрация (без Basic, CSRF отключён для /auth/register)",
+      "item": [
+        {
+          "name": "Register — слабый пароль (ожидается 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"any_user\",\n  \"password\": \"short\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Пароль короче 8 символов — ожидается **400**, текст про длину и спецсимвол."
+          }
+        },
+        {
+          "name": "Register — без спецсимвола (ожидается 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"any_user2\",\n  \"password\": \"onlyletters\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Нет спецсимвола — ожидается **400**."
+          }
+        },
+        {
+          "name": "Register — новый USER (ожидается 201)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{userUsername}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Пароль ≥8 и со спецсимволом — ожидается **201**. Если **409**, смените `userUsername` в переменных коллекции."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 CSRF",
+      "item": [
+        {
+          "name": "Get CSRF token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/csrf",
+            "description": "Ожидается **200**, JSON с полем `csrfToken`. Дальше подставляйте его в `X-XSRF-TOKEN` и в cookie `XSRF-TOKEN` для POST/PUT/DELETE к `/api/**`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const j = pm.response.json();",
+                  "  if (j && j.csrfToken) pm.collectionVariables.set('csrfToken', j.csrfToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 Доступ без аутентификации (негатив)",
+      "item": [
+        {
+          "name": "GET /api/airports без Basic (ожидается 401)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/airports",
+            "description": "Без заголовка Authorization — ожидается **401 Unauthorized**."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 Роль USER + Basic Auth",
+      "item": [
+        {
+          "name": "GET /api/airports (ожидается 200)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{userUsername}}", "type": "string" },
+                { "key": "password", "value": "{{userPassword}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/airports",
+            "description": "USER может читать `/api/**` GET — **200**."
+          }
+        },
+        {
+          "name": "GET операция — рейсы по маршруту (ожидается 200)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{userUsername}}", "type": "string" },
+                { "key": "password", "value": "{{userPassword}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/operations/flights-by-route?departure=SVO&arrival=LED",
+            "description": "GET к `/api/operations/**` разрешён USER — **200**."
+          }
+        },
+        {
+          "name": "POST /api/aircraft — запрещено USER (ожидается 403)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{userUsername}}", "type": "string" },
+                { "key": "password", "value": "{{userPassword}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "X-XSRF-TOKEN", "value": "{{csrfToken}}" },
+              { "key": "Cookie", "value": "XSRF-TOKEN={{csrfToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"Test\",\n  \"registrationCode\": \"RA-TEST01\",\n  \"capacity\": 100\n}"
+            },
+            "url": "{{baseUrl}}/api/aircraft",
+            "description": "Создание самолёта только **ADMIN** — ожидается **403 Forbidden** (при корректном CSRF)."
+          }
+        },
+        {
+          "name": "POST /api/bookings — разрешено USER (ожидается 201 или 4xx по бизнес-логике)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{userUsername}}", "type": "string" },
+                { "key": "password", "value": "{{userPassword}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "X-XSRF-TOKEN", "value": "{{csrfToken}}" },
+              { "key": "Cookie", "value": "XSRF-TOKEN={{csrfToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passengerId\": 1,\n  \"flightId\": 1,\n  \"seatNumber\": \"99Z\"\n}"
+            },
+            "url": "{{baseUrl}}/api/bookings",
+            "description": "Бронь — роль **USER**. Ожидается **201** при валидных id/месте; иначе **400/409** по домену, но не **403** из-за роли."
+          }
+        },
+        {
+          "name": "POST /api/operations/.../cancel — только ADMIN (ожидается 403)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{userUsername}}", "type": "string" },
+                { "key": "password", "value": "{{userPassword}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "X-XSRF-TOKEN", "value": "{{csrfToken}}" },
+              { "key": "Cookie", "value": "XSRF-TOKEN={{csrfToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/operations/flights/2/cancel",
+            "description": "USER не может отменять рейс — ожидается **403**."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 Роль ADMIN + Basic Auth",
+      "item": [
+        {
+          "name": "POST /api/aircraft (ожидается 201)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{adminUsername}}", "type": "string" },
+                { "key": "password", "value": "{{adminPassword}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "X-XSRF-TOKEN", "value": "{{csrfToken}}" },
+              { "key": "Cookie", "value": "XSRF-TOKEN={{csrfToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"Boeing 737\",\n  \"registrationCode\": \"RA-77777\",\n  \"capacity\": 180\n}"
+            },
+            "url": "{{baseUrl}}/api/aircraft",
+            "description": "**ADMIN** + CSRF — ожидается **201**. При дубликате `registrationCode` возможен **409/400**."
+          }
+        },
+        {
+          "name": "PUT /api/airports/1 (ожидается 200)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{adminUsername}}", "type": "string" },
+                { "key": "password", "value": "{{adminPassword}}", "type": "string" }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              { "key": "X-XSRF-TOKEN", "value": "{{csrfToken}}" },
+              { "key": "Cookie", "value": "XSRF-TOKEN={{csrfToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"SVO\",\n  \"name\": \"Sheremetyevo\",\n  \"city\": \"Moscow\"\n}"
+            },
+            "url": "{{baseUrl}}/api/airports/1",
+            "description": "Только **ADMIN** — **200** при существующем id."
+          }
+        },
+        {
+          "name": "POST отмена рейса (ожидается 200)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{adminUsername}}", "type": "string" },
+                { "key": "password", "value": "{{adminPassword}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "X-XSRF-TOKEN", "value": "{{csrfToken}}" },
+              { "key": "Cookie", "value": "XSRF-TOKEN={{csrfToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/operations/flights/2/cancel",
+            "description": "**ADMIN** — **200** при валидном сценарии отмены; иначе код по бизнес-логике."
+          }
+        },
+        {
+          "name": "PUT /api/bookings/1 — только ADMIN (ожидается 200)",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "{{adminUsername}}", "type": "string" },
+                { "key": "password", "value": "{{adminPassword}}", "type": "string" }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              { "key": "X-XSRF-TOKEN", "value": "{{csrfToken}}" },
+              { "key": "Cookie", "value": "XSRF-TOKEN={{csrfToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passengerId\": 1,\n  \"flightId\": 1,\n  \"seatNumber\": \"12A\"\n}"
+            },
+            "url": "{{baseUrl}}/api/bookings/1",
+            "description": "Изменение брони — **ADMIN**. **200** при валидных данных."
+          }
+        }
+      ]
+    }
+  ]
+}

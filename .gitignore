@@ -42,3 +42,9 @@ build/
 .env
 .env.local
 *.env.local
+
+### TLS secrets (Task 6) ###
+certs/private/
+certs/**/*.key
+certs/**/*.p12
+certs/**/*.pfx

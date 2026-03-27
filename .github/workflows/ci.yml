@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Restore TLS keystore (from secrets)
+        if: ${{ secrets.TLS_KEYSTORE_B64 != '' }}
+        shell: bash
+        run: |
+          mkdir -p .ci
+          echo "${{ secrets.TLS_KEYSTORE_B64 }}" | base64 -d > .ci/server.p12
+
+      - name: Compile
+        run: mvn -B -q compile
+
+      - name: Test
+        run: mvn -B -q test
+
+      - name: Package
+        env:
+          TLS_ENABLED: "true"
+          SERVER_PORT: "8443"
+          TLS_KEYSTORE_PATH: ${{ github.workspace }}/.ci/server.p12
+          TLS_KEYSTORE_PASSWORD: ${{ secrets.TLS_KEYSTORE_PASSWORD }}
+          TLS_KEYSTORE_TYPE: "PKCS12"
+          TLS_KEY_ALIAS: "aviation-22017"
+        run: mvn -B -q package
+
+      - name: Upload artifact (jar)
+        uses: actions/upload-artifact@v4
+        with:
+          name: aviationservice-jar
+          path: target/*.jar
+          if-no-files-found: error
+
